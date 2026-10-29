@@ -1,0 +1,14 @@
+# --- web app ---
+flask>=3.0
+torch>=2.1
+torchvision>=0.16
+numpy
+pillow
+joblib
+# Use the SAME versions you trained with, otherwise saved models may not load:
+scikit-learn
+xgboost
+
+# --- training only (train_models.py); install these in Colab, not needed to just run the web app ---
+pandas
+kagglehub

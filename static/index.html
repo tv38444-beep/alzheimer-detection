@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alzheimer's Detection · Deep Learning Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F1F4F8; --card:#fff; --ink:#0D1B2A; --ink2:#415066; --muted:#6B7A90; --line:#E1E7EF; --line2:#EDF1F6; --soft:#F7F9FC;
+  --brand:#0B6E7A; --brand-ink:#075A64; --brand-soft:#E2F1F3; --brand-line:#B7DADF;
+  --pos:#B42318; --pos-soft:#FEF1EF; --pos-line:#F6C6BF;
+  --neg:#067647; --neg-soft:#ECFAF2; --neg-line:#B5E5CC;
+  --warn:#9A5B00; --warn-soft:#FFF6E0;
+  --chart:#0B1626;
+  --petmap:linear-gradient(90deg,#1b1464 0%,#1e5bd6 18%,#12b5b0 36%,#4cc23a 52%,#f1d61e 70%,#f07a1a 85%,#c01818 100%);
+  --display:"Sora","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --shadow:0 1px 2px rgba(13,27,42,.05),0 10px 30px rgba(13,27,42,.06);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.55 var(--body);
+  background-image:radial-gradient(900px 380px at 12% -80px,rgba(11,110,122,.10),transparent 70%),radial-gradient(700px 320px at 95% -60px,rgba(59,91,219,.07),transparent 70%);
+  background-repeat:no-repeat}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid rgba(11,110,122,.45);outline-offset:2px;border-radius:8px}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+.skip{position:absolute;left:-999px;top:8px;background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;z-index:50}
+.skip:focus{left:12px}
+[hidden]{display:none!important}
+
+/* ---------- app bar ---------- */
+.appbar{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.86);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:16px;height:64px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.logo{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#0B6E7A,#3B5BDB);color:#fff;flex:none}
+.brand-text{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+.brand-text strong{font:700 1.05rem/1.2 var(--display);letter-spacing:-.01em}
+.brand-text small{color:var(--muted);font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:.82rem;color:var(--ink2);white-space:nowrap}
+.status .dot{width:8px;height:8px;border-radius:50%;background:#9AA7B8}
+.status[data-ok="true"] .dot{background:#12A150;box-shadow:0 0 0 3px rgba(18,161,80,.18)}
+.status[data-ok="false"] .dot{background:#D97706;box-shadow:0 0 0 3px rgba(217,119,6,.18)}
+.progress{height:3px;background:var(--line2)}
+.progress i{display:block;height:100%;width:100%;background:var(--petmap);transform-origin:left;transform:scaleX(0);transition:transform .6s cubic-bezier(.2,.7,.2,1)}
+
+/* ---------- hero + stepper ---------- */
+.hero{padding:36px 0 8px}
+.eyebrow{margin:0 0 8px;font:600 .74rem/1 var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--brand)}
+h1{margin:0 0 10px;font:700 clamp(1.7rem,3.6vw,2.5rem)/1.12 var(--display);letter-spacing:-.025em;max-width:22ch}
+.lede{margin:0;color:var(--ink2);max-width:62ch}
+.stepper{display:grid;grid-template-columns:repeat(4,1fr);gap:0;list-style:none;margin:26px 0 0;padding:0;counter-reset:s}
+.step{position:relative;display:flex;align-items:center;gap:12px;padding:0 12px 0 0;cursor:pointer;min-width:0}
+.step::after{content:"";position:absolute;left:44px;right:10px;top:50%;height:2px;background:var(--line);transform:translateY(-50%);z-index:0}
+.step:last-child::after{display:none}
+.step-dot{position:relative;z-index:1;display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:50%;background:#fff;border:2px solid var(--line);color:var(--muted);font:600 .85rem var(--display)}
+.step-txt{position:relative;z-index:1;display:flex;flex-direction:column;min-width:0;background:var(--bg);padding-right:8px}
+.step-txt b{font-size:.88rem;font-weight:600;color:var(--ink2)}
+.step-txt small{color:var(--muted);font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step[data-s="active"] .step-dot{border-color:var(--brand);color:var(--brand);box-shadow:0 0 0 4px rgba(11,110,122,.14)}
+.step[data-s="active"] .step-txt b{color:var(--ink)}
+.step[data-s="done"] .step-dot{background:var(--brand);border-color:var(--brand);color:#fff}
+.step[data-s="done"]::after{background:var(--brand)}
+.step[data-s="done"] .step-txt b{color:var(--ink)}
+
+/* ---------- layout ---------- */
+.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:28px;align-items:start;padding:26px 0 56px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.viewer{position:sticky;top:84px;padding:14px}
+.flow{display:grid;gap:18px;min-width:0}
+
+/* ---------- viewer ---------- */
+.dropzone{position:relative;aspect-ratio:1/1;display:grid;place-items:center;background:#05080D;border-radius:12px;overflow:hidden;cursor:pointer;border:1.5px dashed #34435A;transition:border-color .2s}
+.dropzone.has-image{border:1.5px solid #18243A}
+.dropzone.dragging{border-color:#12b5b0;background:#06161A}
+.dropzone img{width:100%;height:100%;object-fit:contain;display:block}
+.empty{display:grid;justify-items:center;gap:6px;padding:24px;text-align:center;color:#C9D4E3}
+.empty svg{color:#5E7390}
+.empty b{font:600 1.05rem var(--display);margin-top:8px}
+.empty span{font-size:.86rem;color:#8A9BB2}
+.badge-scan{position:absolute;left:10px;top:10px;padding:4px 10px;border-radius:999px;background:rgba(5,8,13,.72);color:#DCE6F2;font:500 .72rem var(--mono);border:1px solid rgba(255,255,255,.12)}
+.vmeta{display:flex;justify-content:space-between;gap:10px;margin:12px 2px 4px;font-size:.84rem;color:var(--muted)}
+.vmeta span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2);font-weight:500}
+.summary{list-style:none;margin:8px 0 0;padding:0}
+.summary li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 4px;border-top:1px solid var(--line2);font-size:.9rem}
+.summary .k{display:flex;align-items:center;gap:9px;color:var(--muted)}
+.summary .k svg{width:16px;height:16px;color:var(--brand)}
+.summary .v{font-weight:600;text-align:right;overflow-wrap:anywhere}
+.summary .v.pending{color:#9AA7B8;font-weight:400}
+.summary .v.pos{color:var(--pos)} .summary .v.neg{color:var(--neg)}
+.vactions{display:flex;gap:8px;margin-top:12px}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:46px;padding:0 20px;border-radius:12px;border:1.5px solid var(--brand);background:var(--brand);color:#fff;font-weight:600;font-size:.95rem;cursor:pointer;transition:background .15s,transform .05s}
+.btn:hover:not(:disabled){background:var(--brand-ink);border-color:var(--brand-ink)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:disabled{background:#E7ECF2;border-color:#E7ECF2;color:#8996A8;cursor:not-allowed}
+.btn.ghost{background:#fff;color:var(--ink);border-color:var(--line)}
+.btn.ghost:hover:not(:disabled){background:var(--soft);border-color:#C9D3E0}
+.btn.ghost:disabled{background:#fff;color:#A5B0BF;border-color:var(--line2)}
+.btn.sm{min-height:38px;padding:0 14px;font-size:.86rem;border-radius:10px}
+.btn.busy::before{content:"";width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- stage cards ---------- */
+.stage{padding:22px 24px}
+.stage[data-state="locked"]{background:#FBFCFD}
+.stage[data-state="locked"] .stage-head h2{color:var(--muted)}
+.shead{display:flex;align-items:flex-start;gap:14px}
+.snum{display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:12px;background:var(--brand-soft);color:var(--brand)}
+.snum svg{width:20px;height:20px}
+.stage[data-state="locked"] .snum{background:var(--line2);color:#9AA7B8}
+.stage[data-state="done"] .snum{background:var(--brand);color:#fff}
+.stitle{flex:1;min-width:0}
+.stitle h2{margin:0;font:700 1.15rem/1.25 var(--display);letter-spacing:-.01em}
+.stitle p{margin:3px 0 0;color:var(--muted);font-size:.9rem}
+.pill{flex:none;padding:4px 11px;border-radius:999px;font:600 .74rem var(--body);background:var(--line2);color:var(--muted);letter-spacing:.02em}
+.stage[data-state="ready"] .pill{background:var(--brand-soft);color:var(--brand-ink)}
+.stage[data-state="running"] .pill{background:var(--warn-soft);color:var(--warn);animation:pulse 1.2s ease-in-out infinite}
+.stage[data-state="done"] .pill{background:var(--neg-soft);color:var(--neg)}
+@keyframes pulse{50%{opacity:.55}}
+
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+.tile{position:relative;display:flex;flex-direction:column;gap:3px;text-align:left;min-height:74px;padding:12px 14px;background:#fff;border:1.5px solid var(--line);border-radius:14px;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
+.tile:hover:not(:disabled){border-color:var(--brand-line);box-shadow:0 2px 10px rgba(11,110,122,.08)}
+.tile .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tile .nm{font-weight:600;font-size:.96rem}
+.tile .chip{font:500 .72rem var(--mono);color:var(--muted);background:var(--soft);border:1px solid var(--line2);padding:2px 7px;border-radius:6px;white-space:nowrap}
+.tile .ds{font-size:.82rem;color:var(--muted);line-height:1.4}
+.tile .nt{font-size:.78rem;font-weight:600;color:var(--brand)}
+.tile .nt.warn{color:var(--warn)} .tile .nt:empty{display:none}
+.tile[aria-checked="true"]{border-color:var(--brand);background:var(--brand-soft);box-shadow:0 0 0 3px rgba(11,110,122,.12)}
+.tile[aria-checked="true"]::after{content:"";position:absolute;right:10px;bottom:10px;width:18px;height:18px;border-radius:50%;background:var(--brand) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 10.5l3.2 3.2L15 6.8'/%3E%3C/svg%3E") center/12px no-repeat}
+.tile:disabled{cursor:not-allowed;background:var(--soft);opacity:.62}
+.tile:disabled:hover{box-shadow:none;border-color:var(--line)}
+
+.actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;margin-top:16px}
+.note{font-size:.86rem;color:var(--muted)}
+.err{margin:14px 0 0;padding:11px 14px;border-radius:12px;background:var(--pos-soft);border:1px solid var(--pos-line);color:#7A1C12;font-size:.9rem;overflow-wrap:anywhere}
+
+/* ---------- outputs ---------- */
+.out{margin-top:18px;padding-top:18px;border-top:1px dashed var(--line);animation:rise .35s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:10px;margin-bottom:14px}
+.stat{padding:11px 14px;background:var(--soft);border:1px solid var(--line2);border-radius:12px}
+.stat label{display:block;font:600 .68rem/1.2 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.stat b{display:block;margin-top:4px;font:600 1.1rem/1.25 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat b small{font:500 .78rem var(--body);color:var(--muted)}
+.stat b.warn{color:var(--warn)}
+.capt{margin:0 0 8px;font-size:.8rem;color:var(--muted)}
+canvas.chart{display:block;width:100%;height:84px;background:var(--chart);border-radius:12px}
+
+/* ---------- feature budget (in Select stage) ---------- */
+.budget{margin-top:18px;padding:18px;border:1.5px solid var(--brand-line);background:linear-gradient(180deg,#F3FAFB,#fff);border-radius:16px}
+.bhead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.bhead h3{margin:0;font:700 1rem var(--display)}
+.bhead p{margin:3px 0 0;color:var(--muted);font-size:.86rem;max-width:44ch}
+.bval{text-align:right;flex:none}
+.bval strong{display:block;font:700 2rem/1 var(--display);color:var(--brand);font-variant-numeric:tabular-nums}
+.bval span{font:500 .78rem var(--mono);color:var(--ink2)}
+.slider{position:relative;margin:16px 4px 2px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:0;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:8px;border-radius:99px;background:linear-gradient(90deg,var(--brand) var(--fill,100%),#D6DEE8 var(--fill,100%))}
+input[type=range]::-moz-range-track{height:8px;border-radius:99px;background:#D6DEE8}
+input[type=range]::-moz-range-progress{height:8px;border-radius:99px;background:var(--brand)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;margin-top:-8px;border-radius:50%;background:#fff;border:3px solid var(--brand);box-shadow:0 2px 8px rgba(11,110,122,.35)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid var(--brand);box-shadow:0 2px 8px rgba(11,110,122,.35)}
+input[type=range]:disabled{cursor:not-allowed;opacity:.6}
+.ticks{display:flex;justify-content:space-between;padding:0 2px;margin-top:2px;font:500 .74rem var(--mono);color:var(--muted)}
+.ticks span.on{color:var(--brand);font-weight:600}
+.budget canvas.chart{margin-top:12px;height:70px}
+.legend{display:flex;gap:16px;margin-top:9px;font-size:.78rem;color:var(--muted);flex-wrap:wrap}
+.legend i{display:inline-block;width:18px;height:8px;border-radius:3px;margin-right:6px;vertical-align:middle;background:var(--petmap)}
+.legend i.drop{background:#C9D3E0}
+
+/* ---------- result ---------- */
+.result{padding:26px;border-width:1.5px}
+.result[data-v="pos"]{border-color:var(--pos-line);background:linear-gradient(180deg,var(--pos-soft),#fff 60%)}
+.result[data-v="neg"]{border-color:var(--neg-line);background:linear-gradient(180deg,var(--neg-soft),#fff 60%)}
+.vrow{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.ring{position:relative;width:104px;height:104px;flex:none}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .tr{stroke:rgba(13,27,42,.1)} .ring .fg{stroke:var(--brand);transition:stroke-dashoffset .9s cubic-bezier(.2,.7,.2,1)}
+.result[data-v="pos"] .ring .fg{stroke:var(--pos)} .result[data-v="neg"] .ring .fg{stroke:var(--neg)}
+.ring b{position:absolute;inset:0;display:grid;place-items:center;font:700 1.3rem var(--display);font-variant-numeric:tabular-nums}
+.vtext{flex:1;min-width:220px}
+.vtext h2{margin:0;font:700 clamp(1.5rem,3vw,2rem)/1.1 var(--display);letter-spacing:-.02em}
+.result[data-v="pos"] h2{color:#8E1D13} .result[data-v="neg"] h2{color:#05603A}
+.vtext p{margin:6px 0 0;color:var(--ink2)}
+.probs{display:grid;gap:9px;margin:22px 0 0;padding:0;list-style:none}
+.prob{display:grid;grid-template-columns:minmax(0,10rem) 1fr 3.8rem;align-items:center;gap:12px;font-size:.9rem}
+.prob .tr{height:10px;border-radius:99px;background:rgba(13,27,42,.09);overflow:hidden}
+.prob .fl{display:block;height:100%;border-radius:99px;background:#8A99AE}
+.prob:first-child .fl{background:var(--brand)}
+.result[data-v="pos"] .prob:first-child .fl{background:var(--pos)} .result[data-v="neg"] .prob:first-child .fl{background:var(--neg)}
+.prob em{font:600 .9rem var(--mono);font-style:normal;text-align:right}
+.path{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
+.path .c{padding:5px 11px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:.82rem;font-weight:600}
+.path .a{color:var(--muted)}
+.path .c.f{background:var(--brand-soft);border-color:var(--brand-line);color:var(--brand-ink);font-family:var(--mono);font-weight:500}
+.reli{margin-top:22px;padding-top:20px;border-top:1px dashed var(--line)}
+.reli h3{margin:0 0 3px;font:700 1rem var(--display)}
+.reli p.sub{margin:0 0 14px;color:var(--muted);font-size:.86rem}
+.reli .stats{grid-template-columns:repeat(auto-fit,minmax(104px,1fr))}
+canvas.lv{display:block;width:100%;height:150px;margin-top:4px}
+.fine{margin:18px 0 0;font-size:.8rem;color:var(--muted);max-width:70ch}
+.banner{padding:13px 16px;border-radius:14px;background:var(--warn-soft);border:1px solid #F3D9A0;color:#6B4200;font-size:.9rem}
+.banner code{font-family:var(--mono);font-size:.84rem;background:rgba(154,91,0,.1);padding:1px 6px;border-radius:5px}
+footer{padding:6px 0 40px;color:var(--muted);font-size:.8rem;text-align:center}
+
+/* ---------- responsive ---------- */
+@media (max-width:960px){
+  .grid{grid-template-columns:1fr}
+  .viewer{position:static}
+  .dropzone{aspect-ratio:4/3}
+}
+@media (max-width:640px){
+  .wrap{padding:0 16px}
+  .brand-text small{display:none}
+  .stepper{grid-template-columns:repeat(4,auto);justify-content:space-between}
+  .step{padding:0}.step::after,.step-txt small{display:none}
+  .step-txt{padding:0;background:none}.step-txt b{font-size:.74rem}
+  .step{flex-direction:column;gap:6px;text-align:center}
+  .stage{padding:18px 16px}
+  .tiles{grid-template-columns:1fr}
+  .bhead{flex-direction:column;gap:10px}.bval{text-align:left}
+  .prob{grid-template-columns:minmax(0,7rem) 1fr 3.4rem}
+  .status span:last-child{max-width:130px;overflow:hidden;text-overflow:ellipsis}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#flow">Skip to pipeline</a>
+
+<header class="appbar">
+  <div class="wrap bar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="8" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M7.9 7l8.2.7M7.2 8l3.6 8M16.9 9.9l-3.7 6.2"/></svg>
+      </span>
+      <span class="brand-text"><strong>AlzDetect</strong><small>Deep-learning brain scan classification</small></span>
+    </div>
+    <div class="status" id="status" data-ok="" aria-live="polite"><span class="dot"></span><span id="statusText">Connecting…</span></div>
+  </div>
+  <div class="progress" aria-hidden="true"><i id="progress"></i></div>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <p class="eyebrow">Transfer learning · feature selection · classification</p>
+    <h1>Alzheimer's detection from brain scans</h1>
+    <p class="lede">Load a preprocessed scan, then choose one method for each stage. The output of every stage feeds the next, and you decide how many of the selected features reach the classifier.</p>
+    <ol class="stepper" id="stepper" aria-label="Pipeline progress"></ol>
+  </section>
+
+  <main class="grid">
+    <aside class="viewer card" aria-label="Scan viewer">
+      <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Load a brain scan. Press Enter to browse or drop a file here.">
+        <img id="scanImg" alt="Loaded brain scan" hidden>
+        <span class="badge-scan" id="scanBadge" hidden>INPUT</span>
+        <div class="empty" id="empty">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 16V8m0 0l-3 3m3-3l3 3"/></svg>
+          <b>Drop a brain scan here</b>
+          <span>or click to browse · PNG, JPG, BMP, TIFF, WebP · up to 15 MB</span>
+        </div>
+      </div>
+      <div class="vmeta"><span id="scanName">No scan loaded</span><span id="scanDims"></span></div>
+      <ul class="summary" id="summary"></ul>
+      <div class="vactions">
+        <button type="button" class="btn ghost sm" id="replaceBtn">Replace scan</button>
+        <button type="button" class="btn ghost sm" id="resetBtn" disabled>Reset pipeline</button>
+      </div>
+      <input type="file" id="fileInput" accept="image/*,.tif,.tiff" hidden>
+    </aside>
+
+    <div class="flow" id="flow">
+      <div class="banner" id="banner" hidden></div>
+      <div id="stageHost" style="display:contents"></div>
+      <div><button type="button" class="btn ghost" id="runAll">Run all stages</button></div>
+
+      <section class="result card" id="result" hidden aria-live="polite" aria-label="Classification result">
+        <div class="vrow">
+          <div class="ring"><svg viewBox="0 0 120 120"><circle class="tr" cx="60" cy="60" r="52" fill="none" stroke-width="10"/><circle class="fg" id="ringFg" cx="60" cy="60" r="52" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/></svg><b id="ringTxt">0%</b></div>
+          <div class="vtext">
+            <p class="eyebrow" style="margin-bottom:6px">Classification result</p>
+            <h2 id="vTitle"></h2>
+            <p id="vSub"></p>
+          </div>
+        </div>
+        <ul class="probs" id="probs"></ul>
+        <div class="path" id="path"></div>
+        <div class="reli" id="reli" hidden>
+          <h3>How reliable is this pipeline?</h3>
+          <p class="sub" id="reliSub"></p>
+          <div class="stats" id="reliStats"></div>
+          <p class="capt" style="margin-top:16px">Test accuracy at each feature budget (same extractor, selector and classifier)</p>
+          <canvas class="lv" id="lvChart" aria-label="Test accuracy by feature budget"></canvas>
+        </div>
+        <p class="fine">Research prototype. Numbers come from a held-out test split of the training dataset and do not guarantee performance on new scans. This is not a medical diagnosis; a qualified clinician must review any clinical decision.</p>
+      </section>
+    </div>
+  </main>
+  <footer>Alzheimer's detection pipeline · CNN feature extraction → feature selection → classifier</footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const ICON = {
+    upload:'<path d="M12 16V4m0 0l-4 4m4-4l4 4M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/>',
+    layers:'<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
+    filter:'<path d="M3 5h18l-7 8v6l-4-2v-4L3 5z"/>',
+    target:'<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>',
+    scan:'<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="12" cy="12" r="3.5"/>',
+    sliders:'<path d="M4 7h10m4 0h2M4 17h2m4 0h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+    flag:'<path d="M5 21V4m0 0h11l-2 4 2 4H5"/>'
+  };
+  const svg = (name, w = 20) => '<svg width="' + w + '" height="' + w + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[name] + '</svg>';
+
+  const STAGES = [
+    { key: "extractor", title: "Feature extraction", icon: "layers", step: "Extract", endpoint: "/api/extract", run: "Extract features",
+      hint: "A pretrained CNN turns the scan into a feature vector.",
+      options: [
+        { id: "resnet50", name: "ResNet-50", desc: "Residual network", dim: 2048 },
+        { id: "efficientnet_b0", name: "EfficientNet-B0", desc: "Compact, efficient network", dim: 1280 },
+        { id: "convnext_tiny", name: "ConvNeXt-tiny", desc: "Modernised convolutional network", dim: 768 },
+        { id: "densenet121", name: "DenseNet-121", desc: "Densely connected network", dim: 1024 }] },
+    { key: "selector", title: "Feature selection", icon: "filter", step: "Select", endpoint: "/api/select", run: "Select features",
+      hint: "Keep the most useful features, ranked best-first.",
+      options: [
+        { id: "pca", name: "PCA", desc: "Principal components, ranked by variance" },
+        { id: "mrmr", name: "mRMR", desc: "Relevant but non-redundant features" },
+        { id: "pso", name: "PSO", desc: "Particle-swarm search for the best subset" },
+        { id: "rfe", name: "RFE", desc: "Recursively drops the weakest features" }] },
+    { key: "classifier", title: "Classification", icon: "target", step: "Classify", endpoint: "/api/classify", run: "Classify scan",
+      hint: "The model that decides whether the scan shows Alzheimer's.",
+      options: [
+        { id: "svm", name: "SVM", desc: "Maximum-margin boundary" },
+        { id: "random_forest", name: "Random Forest", desc: "Vote of many decision trees" },
+        { id: "knn", name: "KNN", desc: "Compares with the nearest training scans" },
+        { id: "xgboost", name: "XGBoost", desc: "Gradient-boosted decision trees" }] }
+  ];
+  const KEYS = STAGES.map(s => s.key);
+  const NAMES = {};
+  STAGES.forEach(s => s.options.forEach(o => { NAMES[s.key + ":" + o.id] = o.name; }));
+  const DEFAULT_LEVELS = [10, 20, 30, 40, 50, 60];
+
+  const state = {
+    token: null, uploaded: false, uploading: false, running: null, options: null,
+    choice: { extractor: null, selector: null, classifier: null },
+    done: { extractor: false, selector: false, classifier: false },
+    info: {}, percent: 60, levels: DEFAULT_LEVELS.slice(), curve: null, selDim: null, result: null
+  };
+  const $ = (s, r = document) => r.querySelector(s);
+  const els = {};
+  const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- charts ---------- */
+  const STOPS = [[0,[27,20,100]],[.18,[30,91,214]],[.36,[18,181,176]],[.52,[76,194,58]],[.70,[241,214,30]],[.85,[240,122,26]],[1,[192,24,24]]];
+  function petColor(t) {
+    t = Math.max(0, Math.min(1, t));
+    for (let i = 1; i < STOPS.length; i++) if (t <= STOPS[i][0]) {
+      const [t0, c0] = STOPS[i - 1], [t1, c1] = STOPS[i], f = (t - t0) / (t1 - t0);
+      return "rgb(" + c0.map((v, k) => Math.round(v + (c1[k] - v) * f)).join(",") + ")";
+    }
+    return "rgb(192,24,24)";
+  }
+  function setup(canvas) {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return null;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+  }
+  function drawBars(canvas, bars, keepFrac) {
+    canvas.__redraw = () => drawBars(canvas, bars, keepFrac);
+    const c = setup(canvas); if (!c) return;
+    const { ctx, w, h } = c, n = bars.length, gap = n > 60 ? 1 : 2, bw = (w - 16 - gap * (n - 1)) / n;
+    const keep = keepFrac == null ? n : Math.max(1, Math.round(keepFrac * n));
+    bars.forEach((v, i) => {
+      const bh = Math.max(2, v * (h - 14));
+      ctx.fillStyle = i < keep ? petColor(v) : "rgba(201,211,224,.22)";
+      ctx.fillRect(8 + i * (bw + gap), h - 6 - bh, bw, bh);
+    });
+    if (keepFrac != null && keep < n) {
+      const x = 8 + keep * (bw + gap) - gap / 2;
+      ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x, 4); ctx.lineTo(x, h - 4); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  function drawLevels(canvas, levels, vals, active) {
+    canvas.__redraw = () => drawLevels(canvas, levels, vals, active);
+    const c = setup(canvas); if (!c) return;
+    const { ctx, w, h } = c, padL = 40, padR = 18, padT = 26, padB = 30;
+    const nums = levels.map(l => vals[l]).filter(v => v != null);
+    if (!nums.length) return;
+    let lo = Math.min(...nums), hi = Math.max(...nums);
+    lo = Math.max(0, Math.floor((lo - 0.04) * 20) / 20); hi = Math.min(1, Math.ceil((hi + 0.02) * 20) / 20);
+    if (hi - lo < 0.1) lo = Math.max(0, hi - 0.1);
+    const X = i => padL + (levels.length === 1 ? (w - padL - padR) / 2 : i * (w - padL - padR) / (levels.length - 1));
+    const Y = v => padT + (1 - (v - lo) / (hi - lo)) * (h - padT - padB);
+    ctx.font = "500 11px 'IBM Plex Mono',monospace"; ctx.textAlign = "right"; ctx.fillStyle = "#7B8AA0"; ctx.strokeStyle = "#E6EBF2"; ctx.lineWidth = 1;
+    [lo, (lo + hi) / 2, hi].forEach(v => { ctx.beginPath(); ctx.moveTo(padL, Y(v)); ctx.lineTo(w - padR, Y(v)); ctx.stroke(); ctx.fillText(Math.round(v * 100) + "%", padL - 8, Y(v) + 4); });
+    ctx.strokeStyle = "#0B6E7A"; ctx.lineWidth = 2.2; ctx.beginPath(); let started = false;
+    levels.forEach((l, i) => { if (vals[l] == null) return; started ? ctx.lineTo(X(i), Y(vals[l])) : ctx.moveTo(X(i), Y(vals[l])); started = true; });
+    ctx.stroke(); ctx.textAlign = "center";
+    levels.forEach((l, i) => {
+      if (vals[l] == null) return;
+      const on = l === active;
+      ctx.beginPath(); ctx.arc(X(i), Y(vals[l]), on ? 6 : 4, 0, 7); ctx.fillStyle = on ? "#0B6E7A" : "#fff"; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "#0B6E7A"; ctx.stroke();
+      ctx.fillStyle = on ? "#0B6E7A" : "#4B5A70"; ctx.font = (on ? "600 " : "500 ") + "11px 'IBM Plex Mono',monospace";
+      ctx.fillText((vals[l] * 100).toFixed(1), X(i), Y(vals[l]) - 11);
+      ctx.fillStyle = on ? "#0B6E7A" : "#7B8AA0"; ctx.fillText(l + "%", X(i), h - 10);
+    });
+  }
+  addEventListener("resize", () => document.querySelectorAll("canvas").forEach(c => c.__redraw && c.__redraw()));
+
+  /* ---------- API ---------- */
+  async function api(path, { body, json } = {}) {
+    const opts = { method: "POST" };
+    if (json) { opts.headers = { "Content-Type": "application/json" }; opts.body = JSON.stringify(json); } else if (body) opts.body = body;
+    let res;
+    try { res = await fetch(path, opts); } catch (_) { throw new Error("Cannot reach the server. Check that app.py is still running."); }
+    let data = {}; try { data = await res.json(); } catch (_) {}
+    if (!res.ok) { const e = new Error(data.error || "Request failed (" + res.status + ")."); e.status = res.status; throw e; }
+    return data;
+  }
+  async function loadOptions() {
+    try { const r = await fetch("/api/options"); if (r.ok) state.options = await r.json(); } catch (_) {}
+    renderStatus();
+  }
+
+  /* ---------- availability helpers ---------- */
+  const O = () => state.options;
+  const pairKey = () => state.choice.extractor + "|" + state.choice.selector;
+  function classifierLevels(clf) { const o = O(); return (o && o.classifiers[pairKey()] && o.classifiers[pairKey()][clf]) || []; }
+  function pairLevels() {
+    const o = O(); if (!o) return DEFAULT_LEVELS.slice();
+    const per = o.classifiers[pairKey()] || {}, set = new Set();
+    Object.values(per).forEach(a => a.forEach(l => set.add(l)));
+    const lv = [...set].sort((a, b) => a - b);
+    return lv.length ? lv : DEFAULT_LEVELS.slice();
+  }
+  function nearest(levels, p) { return levels.reduce((b, l) => Math.abs(l - p) < Math.abs(b - p) ? l : b, levels[0]); }
+  function available(key, id) {
+    const o = O(); if (!o) return true;
+    if (key === "extractor") return (o.selectors[id] || []).length > 0;
+    if (key === "selector") return !state.choice.extractor || (o.selectors[state.choice.extractor] || []).includes(id) && !!o.classifiers[state.choice.extractor + "|" + id];
+    if (key === "classifier") return !state.choice.extractor || !state.choice.selector || classifierLevels(id).length > 0;
+    return true;
+  }
+  function metric(clf) {
+    const o = O(); if (!o || !state.choice.extractor || !state.choice.selector) return null;
+    const lv = classifierLevels(clf); if (!lv.length) return null;
+    const m = o.metrics[pairKey() + "|" + clf + "|" + nearest(lv, state.percent)];
+    return m ? m.accuracy : null;
+  }
+
+  /* ---------- build stages ---------- */
+  function buildStages() {
+    const host = $("#stageHost");
+    STAGES.forEach((st, i) => {
+      const el = document.createElement("section");
+      el.className = "stage card"; el.dataset.stage = st.key; el.id = "st-" + st.key;
+      el.innerHTML =
+        '<header class="shead"><span class="snum">' + svg(st.icon) + '</span>' +
+        '<div class="stitle"><h2>' + (i + 2) + '. ' + st.title + '</h2><p>' + st.hint + '</p></div><span class="pill" data-r="pill"></span></header>' +
+        '<div class="tiles" role="radiogroup" aria-label="' + st.title + ' method"></div>' +
+        '<div class="actions"><button type="button" class="btn" data-r="run"></button><span class="note" data-r="note" aria-live="polite"></span></div>' +
+        '<div class="out" data-r="out" hidden><div class="stats" data-r="stats"></div>' +
+        '<p class="capt" data-r="capt"></p><canvas class="chart" data-r="chart"></canvas></div>' +
+        (st.key === "selector" ?
+          '<div class="budget" data-r="budget" hidden>' +
+          '<div class="bhead"><div><h3>Feature budget for classification</h3><p>Send only the top-ranked share of the selected features to the classifier. The classifier for each level is trained on exactly that many features.</p></div>' +
+          '<div class="bval"><strong data-r="bpct">60%</strong><span data-r="bcount"></span></div></div>' +
+          '<div class="slider"><input type="range" data-r="brange" min="0" max="5" step="1" value="5" aria-label="Percent of selected features sent to the classifier"><div class="ticks" data-r="bticks"></div></div>' +
+          '<canvas class="chart" data-r="bchart" aria-label="Selected features ranked by importance; features right of the dashed line are dropped"></canvas>' +
+          '<div class="legend"><span><i></i>Sent to classifier (top-ranked)</span><span><i class="drop"></i>Dropped</span></div></div>' : '') +
+        '<p class="err" data-r="err" role="alert" hidden></p>';
+      const tiles = $(".tiles", el);
+      st.options.forEach(o => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "tile"; b.dataset.id = o.id; b.setAttribute("role", "radio"); b.setAttribute("aria-checked", "false");
+        b.innerHTML = '<span class="top"><span class="nm">' + o.name + '</span>' + (o.dim ? '<span class="chip">' + o.dim + '-d</span>' : '') + '</span><span class="ds">' + o.desc + '</span><span class="nt"></span>';
+        b.addEventListener("click", () => choose(st.key, o.id));
+        tiles.appendChild(b);
+      });
+      $('[data-r="run"]', el).addEventListener("click", () => runStage(st.key));
+      host.appendChild(el); els[st.key] = el;
+    });
+    const range = $('[data-r="brange"]', els.selector);
+    range.addEventListener("input", () => {
+      state.percent = state.levels[Number(range.value)];
+      if (state.done.classifier) resetFrom(KEYS.indexOf("classifier"));
+      render();
+    });
+  }
+  const R = (key, name) => $('[data-r="' + name + '"]', els[key]);
+
+  /* ---------- state changes ---------- */
+  function choose(key, id) {
+    if (state.running || state.choice[key] === id) return;
+    const was = state.done[key];
+    state.choice[key] = id;
+    if (was) resetFrom(KEYS.indexOf(key));
+    ["selector", "classifier"].forEach(k => { const c = state.choice[k]; if (c && !available(k, c)) { state.choice[k] = null; if (state.done[k]) resetFrom(KEYS.indexOf(k)); } });
+    render();
+  }
+  function resetFrom(idx) {
+    KEYS.forEach((k, i) => { if (i < idx) return; state.done[k] = false; delete state.info[k]; R(k, "out").hidden = true; R(k, "err").hidden = true; });
+    if (idx <= KEYS.indexOf("selector")) { state.curve = null; state.selDim = null; state.levels = DEFAULT_LEVELS.slice(); state.percent = 60; }
+    state.result = null; els.result.hidden = true;
+  }
+  function resetAll() {
+    if (state.running) return;
+    state.choice = { extractor: null, selector: null, classifier: null };
+    resetFrom(0); render();
+  }
+  function showErr(key, msg) { const e = R(key, "err"); e.textContent = msg; e.hidden = false; }
+  function expire(msg) {
+    state.token = null; state.uploaded = false; resetFrom(0);
+    els.img.hidden = true; els.badge.hidden = true; els.empty.hidden = false; els.drop.classList.remove("has-image");
+    els.name.textContent = "No scan loaded"; els.dims.textContent = "";
+    showErr("extractor", msg || "Session expired. Load the scan again.");
+  }
+
+  async function runStage(key) {
+    const st = STAGES.find(s => s.key === key);
+    R(key, "err").hidden = true; state.running = key; render();
+    let ok = false;
+    try {
+      const payload = { token: state.token, method: state.choice[key] };
+      if (key === "classifier") payload.percent = state.percent;
+      const data = await api(st.endpoint, { json: payload });
+      state.done[key] = true; state.info[key] = data;
+      if (key === "classifier") { state.result = data; showResult(data); } else showOutput(key, data);
+      ok = true;
+    } catch (e) {
+      if (e.status === 410) expire(e.message); else showErr(key, e.message);
+    } finally { state.running = null; render(); }
+    return ok;
+  }
+  async function runAll() { for (const k of KEYS) { if (state.done[k]) continue; if (!(await runStage(k))) return; } }
+
+  /* ---------- outputs ---------- */
+  const fmt = n => Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(2);
+  function stat(label, value, cls, small) { return '<div class="stat"><label>' + label + '</label><b class="' + (cls || "") + '">' + value + (small ? ' <small>' + small + '</small>' : '') + '</b></div>'; }
+  function showOutput(key, d) {
+    R(key, "out").hidden = false;
+    const stats = R(key, "stats");
+    if (key === "extractor") {
+      stats.innerHTML = stat("Output", d.dim, "", "features") + stat("Value range", fmt(d.stats.min) + " … " + fmt(d.stats.max)) +
+        stat("Weights", d.weights === "fine-tuned" ? "Fine-tuned" : "ImageNet", d.weights === "fine-tuned" ? "" : "warn") + stat("Time", d.ms, "", "ms");
+      R(key, "capt").textContent = "Extracted feature vector (binned, colour = magnitude)";
+      drawBars(R(key, "chart"), d.bars);
+    } else {
+      stats.innerHTML = stat("Features", d.dim_in + " → " + d.dim) + stat("Kept of extracted", Math.round(d.dim / d.dim_in * 100) + "%") + stat("Time", d.ms, "", "ms");
+      R(key, "capt").textContent = "Selected features for this scan, ranked best-first (left = most important)";
+      drawBars(R(key, "chart"), d.bars);
+      state.curve = d.importance; state.selDim = d.dim; state.levels = (d.levels && d.levels.length ? d.levels : pairLevels());
+      state.percent = state.levels[state.levels.length - 1];
+    }
+  }
+  function showResult(d) {
+    const pos = d.is_positive, r = els.result;
+    r.dataset.v = pos ? "pos" : "neg";
+    $("#vTitle").textContent = pos ? "Alzheimer's detected" : "No Alzheimer's detected";
+    $("#vSub").textContent = "Predicted class: " + d.label;
+    const pct = d.confidence * 100;
+    $("#ringTxt").textContent = pct.toFixed(1) + "%";
+    const fg = $("#ringFg"); fg.style.strokeDashoffset = "326.7";
+    requestAnimationFrame(() => requestAnimationFrame(() => { fg.style.strokeDashoffset = String(326.7 * (1 - d.confidence)); }));
+    let sub = "Confidence " + pct.toFixed(1) + "%";
+    if (d.probability_source === "decision_function") sub += " (decision-function score, not calibrated)";
+    $("#vSub").textContent = "Predicted class: " + d.label + " · " + sub;
+    const list = $("#probs"); list.replaceChildren();
+    d.probabilities.forEach(p => {
+      const li = document.createElement("li"); li.className = "prob";
+      li.innerHTML = '<span></span><span class="tr"><span class="fl"></span></span><em></em>';
+      li.children[0].textContent = p.label; li.querySelector(".fl").style.width = (p.p * 100).toFixed(1) + "%"; li.children[2].textContent = (p.p * 100).toFixed(1) + "%";
+      list.appendChild(li);
+    });
+    const c = state.choice;
+    $("#path").innerHTML = ["extractor", "selector", "classifier"].map(k => '<span class="c">' + NAMES[k + ":" + c[k]] + '</span>').join('<span class="a">→</span>') +
+      '<span class="c f">' + d.features_used + ' / ' + d.features_total + ' features · ' + d.percent + '%</span>';
+    const rel = d.reliability, box = $("#reli");
+    box.hidden = !rel;
+    if (rel) {
+      const p = v => v == null ? "–" : (v * 100).toFixed(1) + "<small>%</small>";
+      $("#reliSub").textContent = "Measured on " + rel.n_test.toLocaleString() + " held-out test scans the model never saw during training.";
+      $("#reliStats").innerHTML = stat("Accuracy", p(rel.accuracy)) + stat("Precision", p(rel.precision)) + stat("Recall", p(rel.recall)) + stat("F1-score", p(rel.f1)) + (rel.auc != null ? stat("AUC", p(rel.auc)) : "");
+      const vals = {}; Object.entries(rel.by_level || {}).forEach(([k, v]) => { vals[Number(k)] = v; });
+      const lv = Object.keys(vals).map(Number).sort((a, b) => a - b);
+      requestAnimationFrame(() => drawLevels($("#lvChart"), lv, vals, d.percent));
+    }
+    els.result.hidden = false;
+    setTimeout(() => els.result.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "nearest" }), 60);
+  }
+
+  /* ---------- upload ---------- */
+  async function handleFile(file) {
+    if (!file) return;
+    if (!(file.type.startsWith("image/") || /\.(png|jpe?g|bmp|tiff?|webp)$/i.test(file.name))) { showErr("extractor", "That file is not an image. Use PNG, JPG, BMP, TIFF or WebP."); return; }
+    if (file.size > 15 * 1024 * 1024) { showErr("extractor", "The image is larger than 15 MB."); return; }
+    state.uploading = true; render();
+    try {
+      const fd = new FormData(); fd.append("image", file);
+      const d = await api("/api/upload", { body: fd });
+      state.token = d.token; state.uploaded = true; resetFrom(0);
+      els.img.src = d.preview; els.img.hidden = false; els.badge.hidden = false; els.empty.hidden = true; els.drop.classList.add("has-image");
+      els.name.textContent = file.name; els.dims.textContent = d.width + " × " + d.height + " px";
+      await loadOptions();
+    } catch (e) { showErr("extractor", e.message); }
+    finally { state.uploading = false; els.file.value = ""; render(); }
+  }
+
+  /* ---------- render ---------- */
+  function renderStatus() {
+    const o = O(), st = $("#status"), t = $("#statusText"), banner = $("#banner");
+    if (!o) { st.dataset.ok = "false"; t.textContent = "Server not reachable"; return; }
+    const trained = Object.keys(o.selectors).filter(k => o.selectors[k].length).length;
+    st.dataset.ok = o.models_found ? "true" : "false";
+    t.textContent = o.models_found ? trained + " extractor" + (trained > 1 ? "s" : "") + " ready · " + (o.device.startsWith("cuda") ? "GPU" : "CPU") : "No trained models found";
+    banner.hidden = o.models_found;
+    if (!o.models_found) banner.innerHTML = "No trained models found in <code>models/</code>. Run <code>train_models.py</code> on your dataset, then copy the generated <code>models</code> folder next to <code>app.py</code> and restart the server.";
+  }
+  function render() {
+    const busy = !!state.running || state.uploading;
+    els.replace.disabled = busy; els.reset.disabled = busy || !(state.choice.extractor || state.done.extractor);
+    STAGES.forEach((st, i) => {
+      const el = els[st.key], prev = i === 0 ? state.uploaded : state.done[KEYS[i - 1]], running = state.running === st.key;
+      const s = state.done[st.key] ? "done" : running ? "running" : prev ? "ready" : "locked";
+      el.dataset.state = s; R(st.key, "pill").textContent = { done: "Done", running: "Running", ready: "Ready", locked: "Locked" }[s];
+      el.querySelectorAll(".tile").forEach(b => {
+        const id = b.dataset.id, av = available(st.key, id), sel = state.choice[st.key] === id, nt = $(".nt", b);
+        b.disabled = !state.uploaded || !av || busy; b.setAttribute("aria-checked", String(sel)); nt.className = "nt"; nt.textContent = "";
+        const o = O();
+        if (!av && o) { nt.textContent = "Not trained yet"; nt.classList.add("warn"); }
+        else if (st.key === "extractor" && o && o.extractors[id]) { nt.textContent = o.extractors[id].finetuned ? "Fine-tuned on your data" : "ImageNet weights only"; if (!o.extractors[id].finetuned) nt.classList.add("warn"); }
+        else if (st.key === "selector" && o && state.choice.extractor) { const n = o.selected_dims[state.choice.extractor + "|" + id]; if (n) nt.textContent = "Keeps " + n + " ranked features"; }
+        else if (st.key === "classifier") { const a = metric(id); if (a != null) nt.textContent = "Test accuracy " + (a * 100).toFixed(1) + "% at " + state.percent + "%"; }
+      });
+      const run = R(st.key, "run");
+      run.disabled = !(prev && state.choice[st.key] && !state.done[st.key] && !busy);
+      run.classList.toggle("busy", running); run.textContent = running ? "Running…" : st.run;
+      R(st.key, "note").textContent = state.done[st.key] ? "Choose another method to run this stage again." : !state.uploaded ? "Load a scan first." : !prev ? "Finish the previous stage first." : !state.choice[st.key] ? "Choose a method." : "";
+    });
+    els.runAll.disabled = !(state.uploaded && KEYS.every(k => state.choice[k]) && !state.done.classifier && !busy);
+
+    // feature budget (inside the Select stage)
+    const box = R("selector", "budget"), ready = state.done.selector && state.curve;
+    box.hidden = !ready;
+    if (ready) {
+      const lv = state.levels, range = R("selector", "brange"), idx = Math.max(0, lv.indexOf(state.percent));
+      range.min = 0; range.max = lv.length - 1; range.value = idx; range.disabled = busy;
+      range.style.setProperty("--fill", lv.length > 1 ? (idx / (lv.length - 1) * 100) + "%" : "100%");
+      R("selector", "bticks").innerHTML = lv.map(l => '<span class="' + (l === state.percent ? "on" : "") + '">' + l + '%</span>').join("");
+      const k = Math.max(1, Math.round(state.percent / 100 * state.selDim));
+      R("selector", "bpct").textContent = state.percent + "%"; R("selector", "bcount").textContent = k + " of " + state.selDim + " features";
+      drawBars(R("selector", "bchart"), state.curve, k / state.selDim);
+    }
+
+    // viewer summary
+    const row = (icon, label, val, cls) => '<li><span class="k">' + svg(icon, 16) + label + '</span><span class="v ' + (cls || "") + '">' + val + '</span></li>';
+    const c = state.choice, i = state.info, nm = k => c[k] ? NAMES[k + ":" + c[k]] : null;
+    const res = state.result;
+    els.summary.innerHTML =
+      row("layers", "Extractor", nm("extractor") ? nm("extractor") + (i.extractor ? " · " + i.extractor.dim : "") : "Not chosen", nm("extractor") ? "" : "pending") +
+      row("filter", "Selector", nm("selector") ? nm("selector") + (i.selector ? " · " + i.selector.dim_in + " → " + i.selector.dim : "") : "Not chosen", nm("selector") ? "" : "pending") +
+      row("sliders", "Feature budget", state.curve ? state.percent + "% of " + state.selDim : "Not set", state.curve ? "" : "pending") +
+      row("target", "Classifier", nm("classifier") || "Not chosen", nm("classifier") ? "" : "pending") +
+      row("flag", "Result", res ? (res.is_positive ? "Alzheimer's detected" : "No Alzheimer's") + " · " + (res.confidence * 100).toFixed(1) + "%" : "Waiting", res ? (res.is_positive ? "pos" : "neg") : "pending");
+
+    // stepper + progress
+    const flags = [state.uploaded, state.done.extractor, state.done.selector, state.done.classifier], names = ["Scan", "Extract", "Select", "Classify"];
+    const sub = [state.uploaded ? (els.name.textContent) : "Load image", nm("extractor") || "Choose CNN", nm("selector") || "Choose method", nm("classifier") || "Choose model"];
+    const firstTodo = flags.indexOf(false);
+    els.stepper.innerHTML = names.map((n, k) => '<li class="step" data-s="' + (flags[k] ? "done" : k === firstTodo ? "active" : "todo") + '" data-go="' + k + '"><span class="step-dot">' + (flags[k] ? "✓" : k + 1) + '</span><span class="step-txt"><b>' + n + '</b><small>' + sub[k] + '</small></span></li>').join("");
+    els.progress.style.transform = "scaleX(" + (flags.filter(Boolean).length / 4) + ")";
+  }
+
+  /* ---------- init ---------- */
+  function init() {
+    Object.assign(els, { drop: $("#dropzone"), img: $("#scanImg"), empty: $("#empty"), badge: $("#scanBadge"), name: $("#scanName"), dims: $("#scanDims"),
+      file: $("#fileInput"), replace: $("#replaceBtn"), reset: $("#resetBtn"), runAll: $("#runAll"), summary: $("#summary"),
+      stepper: $("#stepper"), progress: $("#progress"), result: $("#result") });
+    buildStages();
+    const pick = () => { if (!state.running && !state.uploading) els.file.click(); };
+    els.drop.addEventListener("click", pick); els.replace.addEventListener("click", pick);
+    els.drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+    els.file.addEventListener("change", () => handleFile(els.file.files[0]));
+    ["dragenter", "dragover"].forEach(t => els.drop.addEventListener(t, e => { e.preventDefault(); els.drop.classList.add("dragging"); }));
+    ["dragleave", "drop"].forEach(t => els.drop.addEventListener(t, e => { e.preventDefault(); els.drop.classList.remove("dragging"); }));
+    els.drop.addEventListener("drop", e => { if (!state.running && !state.uploading) handleFile(e.dataTransfer.files[0]); });
+    els.runAll.addEventListener("click", runAll); els.reset.addEventListener("click", resetAll);
+    els.stepper.addEventListener("click", e => {
+      const li = e.target.closest(".step"); if (!li) return; const k = Number(li.dataset.go);
+      const t = k === 0 ? $("#dropzone") : els[KEYS[k - 1]]; t.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" });
+    });
+    loadOptions().then(render); render();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
