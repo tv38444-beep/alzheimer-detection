@@ -1,8 +1,8 @@
-"""Shows which trained model files exist in ./models (new layout with percent levels)."""
+"""Shows which trained model files exist in ./models_retrained (new layout with percent levels)."""
 import json
 from pathlib import Path
 
-M = Path(__file__).resolve().parent / "models"
+M = Path(__file__).resolve().parent / "models_retrained"
 EXT = ["resnet50", "efficientnet_b0", "convnext_tiny", "densenet121"]
 SEL = ["pca", "mrmr", "pso", "rfe"]
 CLF = ["svm", "random_forest", "knn", "xgboost"]

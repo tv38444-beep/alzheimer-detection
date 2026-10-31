@@ -37,4 +37,5 @@ venv/
 
 # Datasets & Temp Caches
 features_cache/
+features_cache*/
 *.log

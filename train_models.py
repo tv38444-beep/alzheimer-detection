@@ -1,7 +1,7 @@
 """
 Train every extractor / selector / classifier combination for the web app,
-on YOUR Alzheimer's brain-scan dataset, and write the files exactly where
-app.py expects them (models/extractors, models/selectors, models/classifiers).
+on YOUR Alzheimer's brain-scan dataset, and write the files into the model
+folder configured in app.py (models_retrained/extractors, selectors, classifiers).
 
 Run it on a GPU (Google Colab: Runtime > Change runtime type > GPU). It also
 works on CPU, just slowly during fine-tuning.
@@ -26,7 +26,7 @@ The classifier for each percent level is trained on exactly those top-k features
 (not on all features with some zeroed out). That is why a 10%-60% budget stays
 accurate: the model has seen that exact input size during training. Test-set
 metrics for every (extractor, selector, classifier, level) are saved to
-models/metrics.json, and the web page shows them next to the prediction.
+OUT_DIR/metrics.json, and the web page shows them next to the prediction.
 """
 import argparse
 import json
@@ -61,7 +61,7 @@ warnings.filterwarnings("ignore")
 # CONFIG - edit this block (or use the command-line switches above)
 # ============================================================================
 DATA_DIR = Path("/content/alzheimer_dataset")   # folder that contains one sub-folder per class
-OUT_DIR = Path("models")                         # copy this folder into your VS Code project
+OUT_DIR = Path("models_retrained")               # app.py loads this completed model set
 CACHE_DIR = Path("features_cache")               # extracted features are cached here
 
 EXTRACTORS_TO_TRAIN = ["resnet50", "efficientnet_b0", "convnext_tiny", "densenet121"]
@@ -80,9 +80,9 @@ TUNE_LEVEL = 30           # hyper-parameters are tuned once here, then reused fo
 
 # --- CNN fine-tuning (transfer learning) ---
 FINE_TUNE = True
-REUSE_FINETUNED_WEIGHTS = True    # reuse models/extractors/<name>.pth if it exists (same dataset/split!)
+REUSE_FINETUNED_WEIGHTS = True    # reuse OUT_DIR/extractors/<name>.pth if it exists (same dataset/split!)
 UNFREEZE = "all"                  # "all" = best accuracy, "last_block" = faster
-FINE_TUNE_EPOCHS = 6
+FINE_TUNE_EPOCHS = 1  # one CPU-feasible transfer-learning pass per backbone
 BATCH_SIZE = 32
 LR_BACKBONE, LR_HEAD = 3e-5, 1e-3
 IMG_SIZE = 224
@@ -104,6 +104,9 @@ CLASS_MAP = {
     "VeryMildDemented": 1, "very_mild_demented": 1, "Very_Mild_Demented": 1,
     "MildDemented": 1, "mild_demented": 1, "Mild_Demented": 1,
     "ModerateDemented": 1, "moderate_demented": 1, "Moderate_Demented": 1,
+    # Four-class Combined Dataset used in this project; app.py exposes binary AD detection.
+    "No Impairment": 0, "Mild Impairment": 1,
+    "Moderate Impairment": 1, "Very Mild Impairment": 1,
     "AD": 1,
 }
 
@@ -120,6 +123,10 @@ def label_for_folder(name):
     if name in CLASS_MAP:
         return CLASS_MAP[name]
     n = re.sub(r"[^a-z]", "", name.lower())
+    if n in {"noimpairment", "nonimpairment"}:
+        return 0
+    if n in {"mildimpairment", "moderateimpairment", "verymildimpairment"}:
+        return 1
     if n.startswith(("non", "normal", "control", "healthy")):
         return 0
     if n == "ad" or any(t in n for t in ("mild", "moderate", "severe", "demented", "dementia", "alzheim")):
@@ -161,11 +168,31 @@ def index_dataset(root: Path):
 
 def load_and_split():
     split_csv = OUT_DIR / "split.csv"
+    # Preserve an existing train/test directory split; validation comes only from train.
+    presplit_train = DATA_DIR / "train"
+    presplit_test = DATA_DIR / "test"
+    if presplit_train.is_dir() and presplit_test.is_dir():
+        print(f"Using the supplied train/test split under {DATA_DIR}")
+        train_all = index_dataset(presplit_train)
+        test_df = index_dataset(presplit_test)
+        print("Train counts:\n", train_all.groupby(["class_folder", "label"]).size().to_string())
+        print("Test counts:\n", test_df.groupby(["class_folder", "label"]).size().to_string())
+        g = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=RANDOM_STATE)
+        tr_idx, va_idx = next(g.split(train_all, groups=train_all["group"]))
+        train_df, val_df = train_all.iloc[tr_idx].copy(), train_all.iloc[va_idx].copy()
+        for frame, split in ((train_df, "train"), (val_df, "val"), (test_df, "test")):
+            frame["path_rel"] = frame["path"].map(lambda p: Path(p).relative_to(DATA_DIR).as_posix())
+            frame["split"] = split
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        pd.concat([train_df, val_df, test_df])[["path_rel", "label", "group", "split"]].to_csv(split_csv, index=False)
+        print(f"train={len(train_df)}  val={len(val_df)}  test={len(test_df)} (provided test set untouched)")
+        return tuple(x.reset_index(drop=True) for x in (train_df, val_df, test_df))
+
     if REUSE_FINETUNED_WEIGHTS and split_csv.exists():
         sp = pd.read_csv(split_csv)
         sp["path"] = [str(DATA_DIR / p) for p in sp["path_rel"]]
         if not all(Path(p).is_file() for p in sp["path"]):
-            raise SystemExit("models/split.csv points to files that are missing from DATA_DIR.")
+            raise SystemExit(f"{split_csv} points to files that are missing from DATA_DIR.")
         print(f"Re-using the saved train/val/test split from {split_csv}")
         return tuple(sp[sp["split"] == s].reset_index(drop=True) for s in ("train", "val", "test"))
 
@@ -605,7 +632,9 @@ def train_downstream(ext, Xtr, ytr, gtr, Xte, yte, results, selected_dims):
 def features_for(ext, backbone, retrain, train_df, val_df, test_df):
     cache = CACHE_DIR / f"{ext}.npz"
     if USE_FEATURE_CACHE and not retrain and cache.exists():
-        z = np.load(cache, allow_pickle=False)
+        # Earlier cache files stored group IDs as object arrays. Those IDs are
+        # generated locally by this script, so allow NumPy to read that field.
+        z = np.load(cache, allow_pickle=True)
         print(f"[{ext}] loaded cached features from {cache}")
         return z["Xtr"], z["ytr"], z["gtr"], z["Xte"], z["yte"]
     trval = pd.concat([train_df, val_df], ignore_index=True)
@@ -614,14 +643,16 @@ def features_for(ext, backbone, retrain, train_df, val_df, test_df):
     Xte, yte = extract_features(backbone, test_df)
     gtr = trval["group"].astype(str).values
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache, Xtr=Xtr, ytr=ytr, gtr=gtr, Xte=Xte, yte=yte)
+    np.savez_compressed(cache, Xtr=Xtr, ytr=ytr, gtr=np.asarray(gtr, dtype=str), Xte=Xte, yte=yte)
     return Xtr, ytr, gtr, Xte, yte
 
 
 def apply_cli():
-    global DATA_DIR, QUICK_MODE, REUSE_FINETUNED_WEIGHTS, EXTRACTORS_TO_TRAIN, PERCENT_LEVELS
+    global DATA_DIR, OUT_DIR, CACHE_DIR, QUICK_MODE, REUSE_FINETUNED_WEIGHTS, EXTRACTORS_TO_TRAIN, PERCENT_LEVELS
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path)
+    ap.add_argument("--output", type=Path, help="write a complete new model set here (default: models_retrained)")
+    ap.add_argument("--cache", type=Path, help="feature-cache directory (default: features_cache)")
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--no-reuse", action="store_true")
     ap.add_argument("--only", nargs="+", choices=list(_BUILDERS))
@@ -629,6 +660,10 @@ def apply_cli():
     a = ap.parse_args()
     if a.data:
         DATA_DIR = a.data
+    if a.output:
+        OUT_DIR = a.output
+    if a.cache:
+        CACHE_DIR = a.cache
     if a.quick:
         QUICK_MODE = True
     if a.no_reuse:
@@ -647,7 +682,24 @@ def main():
     train_df, val_df, test_df = load_and_split()
     meta = {"dataset": {"train": len(train_df), "val": len(val_df), "test": len(test_df)},
             "select_max": SELECT_MAX, "select_fraction": SELECT_FRACTION}
-    results, deep, selected_dims, table = {}, {}, {}, []
+    # Keep metrics from earlier --only runs when they describe the same dataset
+    # and model configuration. This makes an interrupted multi-extractor run resumable.
+    previous = {}
+    metrics_path = OUT_DIR / "metrics.json"
+    if metrics_path.exists():
+        try:
+            previous = json.loads(metrics_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            previous = {}
+    compatible = (previous.get("format") == MODEL_FORMAT
+                  and previous.get("dataset") == meta["dataset"]
+                  and previous.get("select_max") == SELECT_MAX
+                  and previous.get("select_fraction") == SELECT_FRACTION
+                  and previous.get("levels") == PERCENT_LEVELS)
+    results = dict(previous.get("results", {})) if compatible else {}
+    deep = dict(previous.get("deep", {})) if compatible else {}
+    selected_dims = dict(previous.get("selected_dims", {})) if compatible else {}
+    table = []
     for ext in EXTRACTORS_TO_TRAIN:
         t0 = time.time()
         backbone, deep_m, retrain = get_backbone(ext, train_df, val_df, test_df)
@@ -655,8 +707,21 @@ def main():
             deep[ext] = deep_m
         Xtr, ytr, gtr, Xte, yte = features_for(ext, backbone, retrain, train_df, val_df, test_df)
         table += train_downstream(ext, Xtr, ytr, gtr, Xte, yte, results, selected_dims)
+        for row in table:
+            key = f"{row['extractor']}|{row['selector']}|{row['classifier']}|{row['percent']}"
+            if key in results:
+                results[key]["best_params"] = row["best_params"]
         write_metrics({**meta, "selected_dims": selected_dims}, results, deep)   # usable after every extractor
-        pd.DataFrame(table).sort_values("f1", ascending=False).to_csv("results.csv", index=False)
+        csv_rows = []
+        for key, metric in results.items():
+            extractor, selector, classifier, percent = key.split("|")
+            csv_rows.append({"extractor": extractor, "selector": selector, "classifier": classifier,
+                             "percent": int(percent), "features_used": metric.get("k"),
+                             "features_selected": selected_dims.get(f"{extractor}|{selector}"),
+                             **{name: metric.get(name) for name in
+                                ("accuracy", "balanced_accuracy", "precision", "recall", "f1", "auc")},
+                             "best_params": metric.get("best_params", "")})
+        pd.DataFrame(csv_rows).sort_values("f1", ascending=False).to_csv("results.csv", index=False)
         print(f"[{ext}] finished in {(time.time() - t0) / 60:.1f} min\n")
 
     res = pd.DataFrame(table)

@@ -25,14 +25,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 from flask import Flask, jsonify, request, send_from_directory
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from torchvision import models, transforms
 
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
 BASE_DIR = Path(__file__).resolve().parent
-MODELS_DIR = BASE_DIR / "models"
+MODELS_DIR = BASE_DIR / "models_retrained"
 
 IMG_SIZE = 224                      # must match train_models.py
 NORM_MEAN = (0.485, 0.456, 0.406)
@@ -210,8 +210,11 @@ _transform = transforms.Compose([transforms.Resize((IMG_SIZE, IMG_SIZE)), transf
 
 def run_extractor(key, img):
     model, source = get_extractor(key)
-    img_contrast = ImageOps.autocontrast(img.convert("L")).convert("RGB")
-    x = _transform(img_contrast).unsqueeze(0).to(DEVICE)
+    # Keep inference preprocessing identical to train_models.py's eval_tf:
+    # RGB conversion happens at upload, followed by resize, tensor conversion,
+    # and ImageNet normalization. Autocontrast/grayscale here would shift the
+    # input distribution from what the extractor was trained on.
+    x = _transform(img.convert("RGB")).unsqueeze(0).to(DEVICE)
     with torch.inference_mode():
         feats = model(x)
     return feats.flatten(1).cpu().numpy().astype(np.float32), source
@@ -236,7 +239,7 @@ def _require_bundle(obj, path):
     if not (isinstance(obj, dict) and obj.get("version") == MODEL_FORMAT):
         raise PipelineError(
             f"{path.name} was made by an older version of train_models.py. "
-            "Re-run train_models.py (it re-uses your fine-tuned CNN weights) and copy the new models/ folder.", 500)
+            "Re-run train_models.py and point MODELS_DIR at the completed model folder.", 500)
 
 
 def apply_selector(bundle, X):
@@ -427,12 +430,12 @@ def select():
     ext = s["extractor"]
     path = selector_path(ext, method)
     if path is None:
-        raise PipelineError(f"Model file not found: models/selectors/{ext}__{method}.pkl", 404)
+        raise PipelineError(f"Model file not found: {MODELS_DIR.name}/selectors/{ext}__{method}.pkl", 404)
     _, classifiers = scan_models()
     per_clf = classifiers.get(f"{ext}|{method}", {})
     if not per_clf:
         raise PipelineError(f"No classifiers found for {EXTRACTORS[ext]} + {SELECTORS[method]} "
-                            f"(expected models/classifiers/{ext}__{method}__<classifier>__p<percent>.pkl). "
+                            f"(expected {MODELS_DIR.name}/classifiers/{ext}__{method}__<classifier>__p<percent>.pkl). "
                             "Models from the old train_models.py have a different layout; run the new train_models.py.", 404)
     t0 = time.perf_counter()
     try:
@@ -467,7 +470,7 @@ def classify():
     _, classifiers = scan_models()
     levels = classifiers.get(f"{ext}|{sel}", {}).get(method, [])
     if not levels:
-        raise PipelineError(f"Model file not found: models/classifiers/{ext}__{sel}__{method}__p<percent>.pkl", 404)
+        raise PipelineError(f"Model file not found: {MODELS_DIR.name}/classifiers/{ext}__{sel}__{method}__p<percent>.pkl", 404)
     level = min(levels, key=lambda lv: (abs(lv - requested), lv))       # nearest trained level
     path = classifier_path(ext, sel, method, level)
     t0 = time.perf_counter()
